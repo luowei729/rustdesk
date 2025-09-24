@@ -10,7 +10,6 @@ env:
   RUST_VERSION: "1.75"
   FLUTTER_VERSION: "3.24.5"
   VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
-  VERSION: "1.4.2"
 
 jobs:
   generate-bridge:
@@ -95,80 +94,81 @@ jobs:
           rustup target add aarch64-apple-ios
           cargo build --features flutter,hwcodec --release --target aarch64-apple-ios --lib
 
-      - name: Create export options plist for unsigned build
-        run: |
-          cat > ExportOptions.plist << EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>compileBitcode</key>
-              <false/>
-              <key>method</key>
-              <string>development</string>
-              <key>signingStyle</key>
-              <string>manual</string>
-              <key>stripSwiftSymbols</key>
-              <true/>
-              <key>teamID</key>
-              <string></string>
-              <key>thinning</key>
-              <string>&lt;none&gt;</string>
-              <key>uploadBitcode</key>
-              <false/>
-              <key>uploadSymbols</key>
-              <false/>
-          </dict>
-          </plist>
-          EOF
-
-      - name: Build iOS IPA (Unsigned)
+      - name: Build iOS Archive
         run: |
           cd flutter
-          # 首先构建 xcarchive
-          flutter build ipa --release --no-codesign --export-options-plist=../ExportOptions.plist
+          # 构建 iOS 应用（不生成 IPA）
+          flutter build ios --release --no-codesign
           
           # 检查生成的文件
-          echo "检查构建目录内容:"
-          ls -la build/ios/
-          echo "检查 archive 目录内容:"
-          ls -la build/ios/archive/
-          echo "检查 ipa 目录内容:"
-          ls -la build/ios/ipa/ || echo "ipa 目录不存在"
+          echo "=== 检查构建目录结构 ==="
+          find build/ios -type f -name "*.app" | head -10
+          ls -la build/ios/iphoneos/
 
-      - name: Manual IPA creation if needed
+      - name: Create IPA manually from .app file
         run: |
           cd flutter
-          # 如果自动生成的 IPA 不存在，手动创建
-          if [ ! -f "build/ios/ipa/Runner.ipa" ]; then
-            echo "自动 IPA 生成失败，尝试手动创建..."
-            mkdir -p build/ios/ipa
-            cd build/ios/archive/Runner.xcarchive/Products/Applications
-            # 创建 Payload 目录并复制 app
-            mkdir -p Payload
-            cp -r Runner.app Payload/
-            # 创建 IPA 文件
-            zip -r ../../../../ipa/Runner.ipa Payload
-            # 检查结果
-            ls -la ../../../../ipa/
+          
+          # 查找 .app 文件
+          APP_PATH=$(find build/ios/iphoneos -name "*.app" -type d | head -1)
+          
+          if [ -z "$APP_PATH" ]; then
+            echo "错误：未找到 .app 文件"
+            find build/ios -type f -name "*.app" || echo "未找到任何 .app 文件"
+            exit 1
           fi
+          
+          echo "找到 .app 文件: $APP_PATH"
+          
+          # 创建 IPA 目录
+          mkdir -p build/ios/ipa
+          
+          # 创建临时目录结构
+          mkdir -p temp_ipa/Payload
+          
+          # 复制 .app 到 Payload
+          cp -r "$APP_PATH" temp_ipa/Payload/
+          
+          # 进入临时目录并创建 IPA
+          cd temp_ipa
+          zip -r ../build/ios/ipa/RustDesk.ipa .
+          
+          # 返回并清理
+          cd ..
+          rm -rf temp_ipa
+          
+          # 检查生成的 IPA
+          echo "=== 生成的 IPA 文件 ==="
+          ls -la build/ios/ipa/
+          echo "IPA 文件大小:"
+          du -h build/ios/ipa/RustDesk.ipa
 
-      - name: Get version from tag
-        id: get_version
+      - name: Get version information
+        id: version_info
         run: |
           if [[ $GITHUB_REF == refs/tags/* ]]; then
             VERSION=${GITHUB_REF#refs/tags/v}
+            TAG_NAME=${GITHUB_REF#refs/tags/}
           else
             VERSION="nightly-$(date +%Y%m%d)"
+            TAG_NAME="nightly-$(date +%Y%m%d)"
           fi
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
+          echo "版本: $VERSION"
+          echo "Tag: $TAG_NAME"
+
+      - name: Rename IPA with version
+        run: |
+          cd flutter/build/ios/ipa
+          cp RustDesk.ipa "RustDesk-${{ env.VERSION }}-unsigned.ipa"
+          ls -la
 
       - name: Upload IPA as artifact
         uses: actions/upload-artifact@v4
         with:
           name: rustdesk-ios-${{ env.VERSION }}-unsigned
-          path: flutter/build/ios/ipa/*.ipa
+          path: flutter/build/ios/ipa/RustDesk-${{ env.VERSION }}-unsigned.ipa
           retention-days: 30
 
       - name: Create Release
@@ -176,6 +176,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ env.TAG_NAME }}
-          files: flutter/build/ios/ipa/*.ipa
+          files: flutter/build/ios/ipa/RustDesk-${{ env.VERSION }}-unsigned.ipa
           draft: false
           prerelease: false
