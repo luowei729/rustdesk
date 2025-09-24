@@ -48,6 +48,12 @@ jobs:
           cd flutter
           flutter build ipa --release --no-codesign
 
+      - name: Upload ipa to Actions artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: rustdesk-unsigned-ipa
+          path: flutter/build/ios/ipa/*.ipa
+
       - name: Upload ipa to Release
         uses: softprops/action-gh-release@v1
         with:
