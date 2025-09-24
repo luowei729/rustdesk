@@ -95,11 +95,64 @@ jobs:
           rustup target add aarch64-apple-ios
           cargo build --features flutter,hwcodec --release --target aarch64-apple-ios --lib
 
+      - name: Create export options plist for unsigned build
+        run: |
+          cat > ExportOptions.plist << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>compileBitcode</key>
+              <false/>
+              <key>method</key>
+              <string>development</string>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>stripSwiftSymbols</key>
+              <true/>
+              <key>teamID</key>
+              <string></string>
+              <key>thinning</key>
+              <string>&lt;none&gt;</string>
+              <key>uploadBitcode</key>
+              <false/>
+              <key>uploadSymbols</key>
+              <false/>
+          </dict>
+          </plist>
+          EOF
+
       - name: Build iOS IPA (Unsigned)
         run: |
           cd flutter
-          flutter build ipa --release --no-codesign
+          # 首先构建 xcarchive
+          flutter build ipa --release --no-codesign --export-options-plist=../ExportOptions.plist
           
+          # 检查生成的文件
+          echo "检查构建目录内容:"
+          ls -la build/ios/
+          echo "检查 archive 目录内容:"
+          ls -la build/ios/archive/
+          echo "检查 ipa 目录内容:"
+          ls -la build/ios/ipa/ || echo "ipa 目录不存在"
+
+      - name: Manual IPA creation if needed
+        run: |
+          cd flutter
+          # 如果自动生成的 IPA 不存在，手动创建
+          if [ ! -f "build/ios/ipa/Runner.ipa" ]; then
+            echo "自动 IPA 生成失败，尝试手动创建..."
+            mkdir -p build/ios/ipa
+            cd build/ios/archive/Runner.xcarchive/Products/Applications
+            # 创建 Payload 目录并复制 app
+            mkdir -p Payload
+            cp -r Runner.app Payload/
+            # 创建 IPA 文件
+            zip -r ../../../../ipa/Runner.ipa Payload
+            # 检查结果
+            ls -la ../../../../ipa/
+          fi
+
       - name: Get version from tag
         id: get_version
         run: |
