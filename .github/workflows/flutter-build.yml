@@ -520,30 +520,29 @@ jobs:
           name: liblibrustdesk.a
           path: target/aarch64-apple-ios/release/liblibrustdesk.a
 
-      - name: Build rustdesk
+      - name: Build rustdesk IPA (unsigned)
         shell: bash
         run: |
           pushd flutter
-          # flutter build ipa --release --obfuscate --split-debug-info=./split-debug-info --no-codesign
-          # for easy debugging
           flutter build ipa --release --no-codesign
+          # 重命名IPA文件以包含版本和架构信息
+          cd build/ios/ipa
+          for f in *.ipa; do
+            mv "$f" "rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}-unsigned.ipa"
+          done
 
-      # - name: Upload Artifacts
-      #   # if: env.ANDROID_SIGNING_KEY != null && env.UPLOAD_ARTIFACT == 'true'
-      #   uses: actions/upload-artifact@master
-      #   with:
-      #     name: rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}.apk
-      #     path: flutter/build/ios/ipa/*.ipa
+      - name: Upload Unsigned IPA Artifacts
+        uses: actions/upload-artifact@master
+        with:
+          name: rustdesk-ios-${{ matrix.job.arch }}-unsigned
+          path: flutter/build/ios/ipa/rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}-unsigned.ipa
 
-      # - name: Publish ipa package
-      #   # if: env.ANDROID_SIGNING_KEY != null && env.UPLOAD_ARTIFACT == 'true'
-      #   uses: softprops/action-gh-release@v1
-      #   with:
-      #     prerelease: true
-      #     tag_name: ${{ env.TAG_NAME }}
-      #     files: |
-      #       flutter/build/ios/ipa/*.ipa
-
+      - name: Publish unsigned IPA package
+        uses: softprops/action-gh-release@v1
+        with:
+          prerelease: true
+          tag_name: ${{ env.TAG_NAME }}
+          files: flutter/build/ios/ipa/rustdesk-${{ env.VERSION }}-${{ matrix.job.arch }}-unsigned.ipa
 
   build-for-macOS:
     name: ${{ matrix.job.target }}
@@ -756,32 +755,39 @@ jobs:
     needs:
       - build-for-macOS
       - build-for-windows-flutter
+      - build-rustdesk-ios  # 添加iOS构建作为依赖
     runs-on: ubuntu-latest
     if: ${{ inputs.upload-artifact }}
     steps:
-      - name: Download artifacts
+      - name: Download iOS unsigned IPA artifacts
+        uses: actions/download-artifact@master
+        with:
+          name: rustdesk-ios-aarch64-unsigned
+          path: ./ios-unsigned/
+
+      - name: Download macOS unsigned artifacts
         uses: actions/download-artifact@master
         with:
           name: rustdesk-unsigned-macos-x86_64
           path: ./
 
-      - name: Download Artifacts
+      - name: Download macOS ARM64 unsigned artifacts
         uses: actions/download-artifact@master
         with:
           name: rustdesk-unsigned-macos-aarch64
           path: ./
 
-      - name: Download Artifacts
+      - name: Download Windows unsigned artifacts
         uses: actions/download-artifact@master
         with:
           name: rustdesk-unsigned-windows-x86_64
           path: ./windows-x86_64/
 
-      - name: Combine unsigned app
+      - name: Combine unsigned apps
         run: |
-          tar czf rustdesk-${{ env.VERSION }}-unsigned.tar.gz *.dmg windows-x86_64
+          tar czf rustdesk-${{ env.VERSION }}-unsigned.tar.gz *.dmg windows-x86_64 ios-unsigned
 
-      - name: Publish unsigned app
+      - name: Publish unsigned apps
         uses: softprops/action-gh-release@v1
         with:
           prerelease: true
