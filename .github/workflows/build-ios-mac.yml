@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       upload-artifact:
-        description: '是否上传产物到Release'
+        description: '是否上传产物'
         type: boolean
         default: true
         required: true
@@ -27,10 +27,6 @@ on:
         type: boolean
         default: true
         required: true
-  # 添加tag触发
-  push:
-    tags:
-      - 'v*'
 
 env:
   SCITER_RUST_VERSION: "1.75"
@@ -39,19 +35,18 @@ env:
   CARGO_NDK_VERSION: "3.1.2"
   LLVM_VERSION: "15.0.6"
   FLUTTER_VERSION: "3.24.5"
-  # 动态设置TAG_NAME：如果是tag触发，使用实际的tag名；否则使用输入参数
-  TAG_NAME: ${{ github.ref_name != '' && startsWith(github.ref_name, 'v') && github.ref_type == 'tag' && github.ref_name || inputs.upload-tag }}
+  TAG_NAME: "${{ inputs.upload-tag }}"
   VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
   VERSION: "1.4.2"
   UPLOAD_ARTIFACT: "${{ inputs.upload-artifact }}"
 
 jobs:
   generate-bridge:
-    if: ${{ inputs.build-ios != false && github.event_name != 'push' || github.event_name == 'push' && inputs.build-ios != false }}
+    if: ${{ inputs.build-ios != false }}  # 只有需要构建iOS时才运行
     uses: ./.github/workflows/bridge.yml
 
   build-rustdesk-ios:
-    if: ${{ inputs.build-ios != false && github.event_name != 'push' || github.event_name == 'push' && inputs.build-ios != false }}
+    if: ${{ inputs.build-ios != false }}  # 只有需要构建iOS时才运行
     name: Build RustDesk iOS IPA
     runs-on: macos-13
     needs: [generate-bridge]
@@ -153,73 +148,42 @@ jobs:
           
           flutter build ipa --release --no-codesign --export-options-plist=ExportOptions.plist
           
-          # 重命名IPA文件，包含版本和日期信息
-          BUILD_DATE=$(date +"%Y%m%d_%H%M%S")
-          for ipa_file in build/ios/ipa/*.ipa; do
-            mv "$ipa_file" "build/ios/ipa/rustdesk-ios-${{ env.VERSION }}-$BUILD_DATE-unsigned.ipa"
-          done
-
-      - name: Upload IPA to Actions Artifacts (可直接下载)
-        uses: actions/upload-artifact@v4
+      - name: Upload unsigned IPA artifact
+        uses: actions/upload-artifact@master
         with:
           name: rustdesk-ios-unsigned-ipa
           path: flutter/build/ios/ipa/*.ipa
           retention-days: 30
-          # 使用包含版本和日期的文件名
-          if-no-files-found: error
 
-      - name: Create Release and Upload IPA to GitHub Release
+      - name: Create Release and Upload IPA
         if: env.UPLOAD_ARTIFACT == 'true'
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ env.TAG_NAME }}
-          prerelease: ${{ !contains(env.TAG_NAME, 'stable') }}
+          prerelease: true
           files: |
             flutter/build/ios/ipa/*.ipa
           body: |
             Unsigned RustDesk iOS IPA build
-            
-            **版本信息:**
-            - 版本: ${{ env.VERSION }}
+            - Version: ${{ env.VERSION }}
             - Flutter: ${{ env.FLUTTER_VERSION }}
-            - 构建日期: ${{ github.event.head_commit.timestamp || format(time.now(), 'YYYY-MM-DD HH:mm:ss UTC') }}
-            - 构建类型: ${{ github.event_name == 'workflow_dispatch' && '手动构建' || '自动构建' }}
-            
-            **说明:**
-            - 此为未签名的 IPA 文件，仅用于测试目的
-            - 如需安装到设备，需要自行签名或使用开发者证书
-            
-            **下载方式:**
-            1. 在此Release页面直接下载
-            2. 或在Actions页面Artifacts区域下载
+            - Build date: ${{ github.event.head_commit.timestamp || now() }}
+            - Build type: Manual
+            - Note: This is an unsigned IPA file for testing purposes.
 
-      - name: Display Build Info
-        run: |
-          echo "🎉 iOS IPA 构建完成!"
-          echo "📦 IPA 文件已上传到以下位置:"
-          echo "   - Actions Artifacts: 可在本工作流运行页面的Artifacts区域下载"
-          if [ "$UPLOAD_ARTIFACT" == "true" ]; then
-            echo "   - GitHub Release: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG_NAME"
-          fi
-          echo "📱 文件名: $(ls flutter/build/ios/ipa/)"
-
-  # 构建成功提示
+  # 添加一个简单的成功提示job
   build-success:
-    name: 🎉 Build Completed
+    name: Build Completed
     runs-on: ubuntu-latest
     needs: [build-rustdesk-ios]
     if: always()
     steps:
-      - name: Build Status Report
+      - name: Build Status
         run: |
           if [ "${{ needs.build-rustdesk-ios.result }}" == "success" ]; then
-            echo "🎉 iOS IPA 构建成功完成!"
-            echo "📦 产物已上传到以下位置:"
-            echo "   - Actions Artifacts: 可在工作流运行页面直接下载"
-            if [ "${{ env.UPLOAD_ARTIFACT }}" == "true" ]; then
-              echo "   - GitHub Release: https://github.com/$GITHUB_REPOSITORY/releases/tag/${{ env.TAG_NAME }}"
-            fi
+            echo "🎉 iOS IPA build completed successfully!"
+            echo "📦 Artifacts uploaded to release: ${{ env.TAG_NAME }}"
           else
-            echo "❌ 构建失败，请检查日志"
+            echo "❌ Build failed"
             exit 1
           fi
