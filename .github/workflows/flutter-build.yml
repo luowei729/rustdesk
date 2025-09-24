@@ -425,7 +425,7 @@ jobs:
           files: |
             ./SignOutput/rustdesk-*.exe
 
-  build-rustdesk-ios:
+build-rustdesk-ios:
   if: ${{ inputs.upload-artifact }}
   name: build rustdesk ios ipa
   runs-on: ${{ matrix.job.os }}
@@ -451,6 +451,7 @@ jobs:
     - name: Install dependencies
       run: |
         brew install nasm yasm
+
     - name: Checkout source code
       uses: actions/checkout@v4
       with:
@@ -474,6 +475,7 @@ jobs:
         doNotCache: false
 
     - name: Install vcpkg dependencies
+      shell: bash
       run: |
         if ! $VCPKG_ROOT/vcpkg \
           install \
@@ -489,7 +491,6 @@ jobs:
           exit 1
         fi
         head -n 100 "${VCPKG_ROOT}/buildtrees/ffmpeg/build-${{ matrix.job.vcpkg-triplet }}-rel-out.log" || true
-      shell: bash
 
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@v1
@@ -513,7 +514,7 @@ jobs:
       run: |
         rustup target add ${{ matrix.job.target }}
         cargo build --features flutter,hwcodec --release --target aarch64-apple-ios --lib
-        
+
     - name: Upload liblibrustdesk.a Artifacts
       uses: actions/upload-artifact@v4
       with:
