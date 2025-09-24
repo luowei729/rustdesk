@@ -451,7 +451,6 @@ build-rustdesk-ios:
     - name: Install dependencies
       run: |
         brew install nasm yasm
-
     - name: Checkout source code
       uses: actions/checkout@v4
       with:
@@ -505,7 +504,7 @@ build-rustdesk-ios:
         key: ${{ matrix.job.target }}
 
     - name: Restore bridge files
-      uses: actions/download-artifact@master
+      uses: actions/download-artifact@v4
       with:
         name: bridge-artifact
         path: ./
@@ -514,25 +513,27 @@ build-rustdesk-ios:
       run: |
         rustup target add ${{ matrix.job.target }}
         cargo build --features flutter,hwcodec --release --target aarch64-apple-ios --lib
-
+        
     - name: Upload liblibrustdesk.a Artifacts
-      uses: actions/upload-artifact@master
+      uses: actions/upload-artifact@v4
       with:
         name: liblibrustdesk.a
         path: target/aarch64-apple-ios/release/liblibrustdesk.a
 
-    - name: Build rustdesk ios ipa (unsigned)
+    - name: Build Unsigned IPA
       shell: bash
       run: |
         pushd flutter
+        # flutter build ipa --release --obfuscate --split-debug-info=./split-debug-info --no-codesign
+        # for easy debugging
         flutter build ipa --release --no-codesign
 
-    - name: Upload unsigned ipa
-      if: env.UPLOAD_ARTIFACT == 'true'
-      uses: actions/upload-artifact@master
+    - name: Upload Unsigned IPA
+      uses: actions/upload-artifact@v4
       with:
-        name: rustdesk-unsigned-ios-${{ matrix.job.arch }}
+        name: rustdesk-unsigned-ios
         path: flutter/build/ios/ipa/*.ipa
+        if-no-files-found: error
 
   build-for-macOS:
     name: ${{ matrix.job.target }}
